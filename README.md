@@ -11,17 +11,37 @@ Get the source zone by AXFR, get the target zone by AXFR, compare it and adjust 
 deploy as `/etc/dns-replicator/config.yml`
 ```
 # dns_server: default use first from system configuration
-source_domain: "gw.freifunk-stuttgart.de"
-source_domain_dns_server: "dns2.lihas.de"
-tsig_key_name: "gw.freifunk-stuttgart.de"
-tsig_key_secret_file: "/etc/dns-replicator/gw.freifunk-stuttgart.de.secret"
-
-target_domains:
-  - domain: "gw.freifunk-stuttgart.net"
+replicationgroup:
+  - source_domain: "gw.freifunk-stuttgart.de"
+    source_domain_dns_server: "dns2.lihas.de"
     tsig_key_name: "gw.freifunk-stuttgart.de"
-    tsig_key_secret_file: "/etc/dns-replicator/gw.freifunk-stuttgart.de.secret"
-#  - domain: "gw.stuttgart.freifunk.net"
-#    dns_server: "" # might be set manually as well
-#    tsig_key_name: "target-key-name-2"
-#    tsig_key_secret_file: "/etc/dns-replicator/target2.secret"
+    tsig_key_secret_file: "/etc/dns-replicator/gw.freifunk-stuttgart.de.secret"  # Datei statt direktem Secret
+
+    target_domains:
+      - domain: "gw.freifunk-stuttgart.net"
+        tsig_key_name: "gw.freifunk-stuttgart.de"
+        tsig_key_secret_file: "/etc/dns-replicator/gw.freifunk-stuttgart.de.secret"
+        dns_update_max: 1000 # maximum number of entzries to update in one run
+#      - domain: "domain3.example"
+#        dns_server: "dns-server3-ip"
+#        tsig_key_name: "target-key-name-2"
+#        tsig_key_secret_file: "/etc/dns/target2_tsig.secret"
+  - source_domain: "segassign.freifunk-stuttgart.de"
+    tsig_key_name: "gw.freifunk-stuttgart.de"
+    tsig_key_secret_file: "/etc/dns-replicator/gw.freifunk-stuttgart.de.secret"  # Datei statt direktem Secret
+
+    target_domains:
+      - domain: "segassign.freifunk-stuttgart.net"
+        tsig_key_name: "gw.freifunk-stuttgart.de"
+        tsig_key_secret_file: "/etc/dns-replicator/gw.freifunk-stuttgart.de.secret"
+        dns_update_max: 1000
+  - source_domain: "nodes.freifunk-stuttgart.de"
+    tsig_key_name: "gw.freifunk-stuttgart.de"
+    tsig_key_secret_file: "/etc/dns-replicator/gw.freifunk-stuttgart.de.secret"  # Datei statt direktem Secret
+
+    target_domains:
+      - domain: "nodes.freifunk-stuttgart.net"
+        tsig_key_name: "gw.freifunk-stuttgart.de"
+        tsig_key_secret_file: "/etc/dns-replicator/gw.freifunk-stuttgart.de.secret"
+        dns_update_max: 1000
 ```
