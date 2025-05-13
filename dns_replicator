@@ -18,7 +18,8 @@ import dns.resolver
 def parse_arguments():
     """parse arguments"""
     parser = argparse.ArgumentParser(description="replicate DNS zones with AXFR and nsupdate")
-    parser.add_argument("-v", action="count", default=0, help="Setzt das Debug-Level (-v für Debug, -vv für ausführlichere Ausgabe)")
+    parser.add_argument("-v", action="count",
+        default=0, help="Setzt das Debug-Level (-v für Debug, -vv für ausführlichere Ausgabe)")
     return parser.parse_args()
 args = parse_arguments()
 
@@ -44,9 +45,11 @@ def load_secret(secret_file):
         match = re.search(r'secret\s+"([^"]+)"', content)
         if match:
             return match.group(1)
-    except Exception as e:
+    except Exception as e: # pylint: disable=broad-exception-caught
         print(f"ERROR: unable to load secret keys from {secret_file}: {e}")
-    return None
+        sys.exit(1)
+    print(f"ERROR: unable to load secret keys from {secret_file}: regex failed")
+    sys.exit(1)
 
 def get_soa_dns_server(domain, dns_server):
     """get domain primary dns server from soa record"""
@@ -56,26 +59,24 @@ def get_soa_dns_server(domain, dns_server):
         resolver.nameservers = [dns_server]
         answer = resolver.resolve(domain, "SOA")
         return answer[0].mname.to_text()  # SOA-mname is primary dns server
-    except Exception as e:
+    except Exception as e: # pylint: disable=broad-exception-caught
         debug_print(2, f"ERROR: unable to get SOA-record for domain {domain}: {e}")
         return None
 
 def get_zone_data(domain, dns_server, key_name, secret_file):
     """read zone data via axfr"""
+    # pylint: disable=line-too-long
     debug_print(3, f"DEBUG: get zone data for domain {domain} from server {dns_server}")
     tsig_secret = load_secret(secret_file)
-    if not tsig_secret:
-        print(f"ERROR: TSIG-Secret for {domain} can't be loaded.")
-        return None
 
-    debug_print(4, f"DEBUG: get zone data for domain {domain} from server {dns_server} with key {key_name} tsig_secret {tsig_secret}")
+    debug_print(4, f"get zone {domain}, server {dns_server}, key {key_name}, tsig {tsig_secret}")
 
     keyring = dns.tsigkeyring.from_text({key_name: tsig_secret})
     debug_print(5, f"keyring={keyring}")
     try:
         zone_transfer = dns.query.xfr(socket.gethostbyname(dns_server), domain, keyring=keyring, keyname=key_name, keyalgorithm="hmac-sha512")
         return dns.zone.from_xfr(zone_transfer)
-    except Exception as e:
+    except Exception as e: # pylint: disable=broad-exception-caught
         print(f"ERROR: AXFR failed for domain {domain}: {e}")
         return None
 
@@ -87,7 +88,11 @@ def dns_update_run(secret_file,target_domain):
     temp.seek(0)
     if debug_level > 0:
         print(temp.read())
-    res = subprocess.run([ "/usr/bin/nsupdate", "-k", secret_file, "-t", "10", temp.name, "-d" ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    res = subprocess.run([ "/usr/bin/nsupdate",
+                                "-k", secret_file,
+                                "-t", "10",
+                                temp.name, "-d" ],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=True)
     if res.returncode!=0:
         print(f"ERROR: {res}")
         sys.exit(1)
@@ -95,16 +100,13 @@ def dns_update_run(secret_file,target_domain):
     temp.write(f"zone {target_domain}\n")
     if debug_level > 1:
         print(f"{res}")
-    
-temp = tempfile.NamedTemporaryFile(mode="w+", prefix='nsupdate_')
-def sync_zone(source_zone, target_zone, target_domain, key_name, secret_file, dns_update_max):
-    """compare zone and find updates"""
-    tsig_secret = load_secret(secret_file)
-    if not tsig_secret:
-        print(f"ERROR: unable to load secret for {target_domain}.")
-        return
 
-    temp.write(f"zone {target_domain}\n")
+temp = tempfile.NamedTemporaryFile(mode="w+", prefix='nsupdate_')
+
+def sync_zone(source_zone, target_zone, target, dns_update_max):
+    """compare zone and find updates"""
+    # pylint: disable=line-too-long
+    temp.write(f'zone {target["domain"]}\n')
 
     debug_print(5, f"Source zone items {source_zone.nodes.items()}")
     dnscount=0
@@ -112,7 +114,7 @@ def sync_zone(source_zone, target_zone, target_domain, key_name, secret_file, dn
         if f"{source_record_name}" == "@":
             continue
         if dnscount > dns_update_max:
-            dns_update_run(secret_file,target_domain)
+            dns_update_run(target["secret_file"],target["domain"])
             dnscount=0
         debug_print(4, source_record_name)
         debug_print(4, f"HANDLE \t{source_record_rdataset}")
@@ -124,22 +126,22 @@ def sync_zone(source_zone, target_zone, target_domain, key_name, secret_file, dn
                 target_record_rdataset = None
 
             if not target_record_rdataset:
-                debug_print(3,f"update add {source_record_name}.{target_domain}. {source_record_rdataset_line}")
-                temp.write(f"update add {source_record_name}.{target_domain}. {source_record_rdataset_line}\n")
+                debug_print(3,f'update add {source_record_name}.{target["domain"]}. {source_record_rdataset_line}')
+                temp.write(f'update add {source_record_name}.{target["domain"]}. {source_record_rdataset_line}\n')
                 dnscount+=1
             else:
                 if source_record_rdataset.to_text() in target_record_rdataset.to_text().split("\n"):
-                    debug_print(3, f"GOOD: {source_record_name}.{target_domain} {source_record_rdataset_line}")
+                    debug_print(3, f'GOOD: {source_record_name}.{target["domain"]} {source_record_rdataset_line}')
                 else:
-                    debug_print(3,f"update add {source_record_name}.{target_domain}. {source_record_rdataset_line}")
-                    temp.write(f"update add {source_record_name}.{target_domain}. {source_record_rdataset_line}\n")
+                    debug_print(3,f'update add {source_record_name}.{target["domain"]}. {source_record_rdataset_line}')
+                    temp.write(f'update add {source_record_name}.{target["domain"]}. {source_record_rdataset_line}\n')
                     dnscount+=1
 
     for target_record_name, target_record_rdataset in target_zone.iterate_rdatasets():
         if f"{target_record_name}" == "@":
             continue
         if dnscount > dns_update_max:
-            dns_update_run(secret_file,target_domain)
+            dns_update_run(target["secret_file"],target["domain"])
             dnscount=0
         debug_print(4, target_record_name)
         debug_print(4, f"HANDLE \t{target_record_rdataset}")
@@ -151,34 +153,32 @@ def sync_zone(source_zone, target_zone, target_domain, key_name, secret_file, dn
                 source_record_rdataset = None
 
             if not source_record_rdataset:
-                debug_print(3,f"update delete {target_record_name}.{target_domain}. {target_record_rdataset_line}")
-                temp.write(f"update delete {target_record_name}.{target_domain}. {target_record_rdataset_line}\n")
+                debug_print(3,f'update delete {target_record_name}.{target["domain"]}. {target_record_rdataset_line}')
+                temp.write(f'update delete {target_record_name}.{target["domain"]}. {target_record_rdataset_line}\n')
                 dnscount+=1
             else:
                 if target_record_rdataset_line not in source_record_rdataset.to_text().split("\n"):
-                    debug_print(3,f"update delete {target_record_name}.{target_domain}. {target_record_rdataset_line}")
-                    temp.write(f"update delete {target_record_name}.{target_domain}. {target_record_rdataset_line}\n")
+                    debug_print(3,f'update delete {target_record_name}.{target["domain"]}. {target_record_rdataset_line}')
+                    temp.write(f'update delete {target_record_name}.{target["domain"]}. {target_record_rdataset_line}\n')
                     dnscount+=1
 
     temp.write("send\n")
     temp.write("answer\n")
     temp.seek(0)
     temp.flush()
-    res = subprocess.run([ "/usr/bin/nsupdate", "-k", secret_file, "-t", "10", temp.name, "-d" ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    res = subprocess.run([ "/usr/bin/nsupdate",
+                            "-k", target["tsig_key_secret_file"],
+                            "-t", "10", temp.name, "-d" ],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=True)
     debug_print(1,temp.read())
     debug_print(2,res)
 
 def main():
     """ main """
+    # pylint: disable=line-too-long
     dns_server = config.get('dns_server', dns.resolver.Resolver().nameservers[0])
     for repconfig in config['replicationgroup']:
         # Source domain: load secret
-        source_tsig_secret = load_secret(repconfig.get('tsig_key_secret_file'))
-        if not source_tsig_secret:
-            print(f"ERROR: unable to load TSIG-secret of source_domain {repconfig.get('tsig_key_secret_file')}")
-            sys.exit(1)
-        source_keyring = dns.tsigkeyring.from_text({repconfig.get('tsig_key_name'): source_tsig_secret})
-
         source_domain_dns_server = repconfig.get('source_domain_dns_server',get_soa_dns_server(repconfig.get('source_domain'),dns_server))
 
         source_zone = get_zone_data(repconfig.get("source_domain"), source_domain_dns_server, repconfig.get('tsig_key_name'), repconfig.get('tsig_key_secret_file'))
@@ -194,7 +194,7 @@ def main():
             if target_dns_server:
                 target_zone = get_zone_data(target["domain"], target_dns_server, target["tsig_key_name"], target["tsig_key_secret_file"])
                 if target_zone:
-                    sync_zone(source_zone, target_zone, target["domain"], target["tsig_key_name"], target["tsig_key_secret_file"], dns_update_max=target["dns_update_max"])
+                    sync_zone(source_zone, target_zone, target, dns_update_max=target["dns_update_max"])
                     debug_print(2,f"Replication completed: {repconfig['source_domain']} → {target['domain']}")
                 else:
                     print(f"ERROR: unable to load zone data for {target['domain']}.")
